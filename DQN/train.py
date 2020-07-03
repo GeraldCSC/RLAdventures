@@ -33,6 +33,7 @@ if __name__ == "__main__":
         'eps_start': 0.9,
         'eps_decay': 200,
         'gather_interval' : 200,
+        'env_name': "Breakout-v0",
         'render': True
     }
     args.update(args_dict)
