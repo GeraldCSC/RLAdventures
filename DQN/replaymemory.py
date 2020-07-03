@@ -13,10 +13,11 @@ class Replay():
 
     def push(self, S,A,R,S_):
         if self.position < self.capacity:
-            self.memory.append(Transition(S,A,R,S_))
             self.position += 1
         else:
-            print("Replay Memory overflow")
+            self.position = 0
+            self.memory = []
+        self.memory.append(Transition(S,A,R,S_))
 
     def sample(self, batch_size): 
         return random.sample(self.memory, batch_size)

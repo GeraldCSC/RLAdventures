@@ -14,6 +14,8 @@ def decompose_sample(boot_strap_model,samples, device):
         rewards.append([item.reward])
         if item.next_state is not None:
             next_states.append(item.next_state)
+        else:
+            boot_strap_value_tensor[i] = 0
     states_tensor = torch.tensor(states, device = device, dtype = torch.float32)
     actions_tensor = torch.tensor(actions, device = device, dtype = torch.long)
     rewards_tensor = torch.tensor(rewards, device=device)
