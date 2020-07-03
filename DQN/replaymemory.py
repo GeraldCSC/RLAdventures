@@ -3,7 +3,7 @@ import random
 import numpy as np
 
 Transition = namedtuple('Transition',
-                        ('state', 'action', 'next_state', 'reward'))
+                        ('state', 'action', 'reward', 'next_state'))
 
 class Replay():
     def __init__(self, capacity):
@@ -13,12 +13,12 @@ class Replay():
 
     def push(self, S,A,R,S_):
         if self.position < self.capacity:
-            S = np.moveaxis(S, -1,0)
-            S_ = np.moveaxis(S_, -1,0)
             self.memory.append(Transition(S,A,R,S_))
             self.position += 1
+        else:
+            print("Replay Memory overflow")
 
-    def sample(self, batch_size): #maybe convert to tensors here?
+    def sample(self, batch_size): 
         return random.sample(self.memory, batch_size)
 
     def __len__(self):
