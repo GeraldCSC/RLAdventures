@@ -1,49 +1,53 @@
 import gym
+import numpy as np
 import random
 from math import exp
 from tqdm import tqdm
 import torch
-import torch.optim as optim
 import torch.nn as nn
-import numpy as np
-from helper import decompose_sample
 from model import DQN
-from replaymemory import Replay
+from memory import ReplayBuffer
+from helper import preproc, get_boot_strap_value
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def preproc(image):
-    image = image.astype("float32")
-    image = (image / 127.5) - 1
-    image = image.transpose(-1,0,1)
-    return image
 
 def main(args):
-    memory = Replay(args.num_memory)
+    replay_buffer = ReplayBuffer(args.num_memory)
     loss_f = nn.SmoothL1Loss()
     policy_net = DQN().to(device)
     target_net = DQN().to(device)
     target_net.load_state_dict(policy_net.state_dict())
     target_net.eval()
-    optimizer = optim.Adam(policy_net.parameters())
+    optimizer = torch.optim.Adam(policy_net.parameters())
 
     def optimize_model():
-        if len(memory) < args.batch_size:
+        if len(replay_buffer) < args.batch_size:
             return
-        samples = memory.sample(args.batch_size)
-        states, actions, rewards, boot_strap_estimates = decompose_sample(target_net,samples, device)
-        q_s_a = policy_net(states).gather(1,actions)
+        state, action, reward, next_state, done = replay_buffer.sample(args.batch_size)
+        state = torch.tensor(state).float().to(device)
+        action = torch.tensor(action).long().to(device)
+        reward = torch.tensor(reward).float().to(device)
+        next_state = torch.tensor(next_state).float().to(device)
+        done = torch.tensor(done).to(device)
+        boot_strap_value = get_boot_strap_value(target_net, next_state, done)
         optimizer.zero_grad()
-        loss = loss_f(q_s_a, args.gamma * boot_strap_estimates + rewards)
-        # print("Huber Loss : {}".format(loss.item()))
+        q_s_a = policy_net(state).gather(1,action)
+        loss = loss_f(q_s_a, (args.gamma * boot_strap_value) + reward)
         loss.backward()
         optimizer.step()
 
-    def select_action(state,t):
+    def select_action(state, e):
+        """
+            state must be preproced
+        """
+        if e != 0:
+            eps_thresh = args.eps_thresh / e
+        else:
+            eps_thresh = args.eps_thresh
         sample = random.random()
-        eps_thresh = args.eps_start * exp(-1 * t / args.eps_decay)
         if sample > eps_thresh:
-            state = torch.tensor(state).unsqueeze(0).float().to(device)
+            state = torch.tensor(state).unsqueeze(0).to(device)
             with torch.no_grad():
                 return policy_net(state).max(1)[1].item()
         else:
@@ -58,36 +62,33 @@ def main(args):
         next_state = None
         done = False
         rewards = []
-        max_steps = 200
+        count = 0
         while not done:
             action = select_action(state, e)
             next_obs, reward, done, info = env.step(action)
             rewards.append(reward)
             if done:
-                next_state = None
+                next_state = np.zeros_like(state)
             else:
                 next_state = preproc(next_obs) - state
-            memory.push(state, action, reward, next_state)
+            replay_buffer.push(state, action, reward, next_state, done)
             state = next_state
-            max_steps -= 1
-            if max_steps == 0:
-                break
-        optimize_model()
+            optimize_model()
         print("Total reward in the episode : {}, epoch : {}".format(sum(rewards), e+1))
-        if e % args.target_update == 0:
+        if (e % args.target_update) == 0:
             target_net.load_state_dict(policy_net.state_dict())
+    torch.save(policy_net.state_dict(), "model.pt")
 
 if __name__ == "__main__":
     from attrdict import AttrDict
     args = AttrDict()
     args_dict = {
-        'batch_size' : 500,
+        'batch_size' : 300,
         'num_epoch' : 300,
         'target_update' : 10,
         'gamma': 0.999,
-        'num_memory': 10000,
-        'eps_start': 0.9,
-        'eps_decay': 200,
+        'num_memory': 1000,
+        'eps_thresh': 0.85,
         'render': False
     }
     args.update(args_dict)

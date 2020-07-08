@@ -1,31 +1,25 @@
-import torch
+import numpy as np
+import torch 
 
-def decompose_sample(boot_strap_model,samples, device):
-    states = []
-    actions = []
-    rewards = []
-    next_states =[]
-    boot_strap_value_tensor = torch.ones(len(samples),1,device = device)
-    dones = []
-    for i in range(len(samples)):
-        item = samples[i]
-        states.append(item.state)
-        actions.append([item.action])
-        rewards.append([item.reward])
-        if item.next_state is not None:
-            next_states.append(item.next_state)
-        else:
-            boot_strap_value_tensor[i] = 0
-    states_tensor = torch.tensor(states, device = device, dtype = torch.float32)
-    actions_tensor = torch.tensor(actions, device = device, dtype = torch.long)
-    rewards_tensor = torch.tensor(rewards, device=device)
-    next_state_tensor = torch.tensor(next_states, device = device, dtype = torch.float32)
+def get_boot_strap_value(target_net,nextstate, done):
+    """
+        Precondition:
+            all inputs are torch tensors 
+            rewards: N x 1
+            nextstate: N x 3 x H x W
+            done: N x 1
+    """
+    boot_straped_value = torch.zeros_like(done).float()
+    done = done.flatten()
+    nextstate = nextstate[done == False]
     with torch.no_grad():
-        output = boot_strap_model(next_state_tensor).max(1)[0]
-    j = 0
-    for i in range(len(boot_strap_value_tensor)):
-        item = boot_strap_value_tensor[i]
-        if item == 1:
-            boot_strap_value_tensor[i] = output[j]
-            j += 1
-    return states_tensor, actions_tensor, rewards_tensor, boot_strap_value_tensor
+        output = target_net(nextstate).max(1)[0]
+    boot_straped_value[done == False] = output.unsqueeze(1)
+    return boot_straped_value
+
+def preproc(image):
+    image = image.astype("float32")
+    image = (image / 127.5) - 1
+    image = image.transpose(-1,0,1)
+    return image
+
