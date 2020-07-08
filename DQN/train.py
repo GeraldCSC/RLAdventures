@@ -1,7 +1,6 @@
 import gym
 import numpy as np
 import random
-from math import exp
 from tqdm import tqdm
 import torch
 import torch.nn as nn
