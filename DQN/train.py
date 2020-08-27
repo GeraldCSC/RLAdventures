@@ -1,94 +1,117 @@
-import gym
 import numpy as np
-import random
-from tqdm import tqdm
-import torch
-import torch.nn as nn
-from model import DQN
+import gym
+import torch 
 from memory import ReplayBuffer
-from helper import preproc, get_boot_strap_value
+from tqdm import tqdm
+from torch.optim import AdamW
+import torch.nn as nn
+import logging 
+from model import DQNLinear
+import random
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+logger = logging.getLogger(__name__)
 
+class TrainConfig:
+    num_epochs = 10000
+    batch_size = 10000
+    lr = 0.0001
+    gamma = 0.999
+    capacity = 10000
+    eps_start = 0.9
+    eps_end = 0.05
+    render = True
+    save_path = "models/model.pt"
+    grad_norm_clip = 1
+    target_update = 10
 
-def main(args):
-    replay_buffer = ReplayBuffer(args.num_memory)
-    loss_f = nn.SmoothL1Loss()
-    policy_net = DQN().to(device)
-    target_net = DQN().to(device)
-    target_net.load_state_dict(policy_net.state_dict())
-    target_net.eval()
-    optimizer = torch.optim.Adam(policy_net.parameters())
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
-    def optimize_model():
-        if len(replay_buffer) < args.batch_size:
-            return
-        state, action, reward, next_state, done = replay_buffer.sample(args.batch_size)
-        state = torch.tensor(state).float().to(device)
-        action = torch.tensor(action).long().to(device)
-        reward = torch.tensor(reward).float().to(device)
-        next_state = torch.tensor(next_state).float().to(device)
-        done = torch.tensor(done).to(device)
-        boot_strap_value = get_boot_strap_value(target_net, next_state, done)
-        optimizer.zero_grad()
-        q_s_a = policy_net(state).gather(1,action)
-        loss = loss_f(q_s_a, (args.gamma * boot_strap_value) + reward)
-        loss.backward()
-        optimizer.step()
+class Trainer:
+    def __init__(self, policyclass, config):
+        self.config = config
+        self.env = gym.make(config.env)
+        self.device = torch.cuda.current_device() if torch.cuda.is_available() else "cpu"
+        self.a_space, self.obs_space = self.env.action_space.n, self.env.observation_space.shape[0]
+        self.policy_net = policyclass(self.obs_space, self.a_space).to(self.device)
+        self.target_net = policyclass(self.obs_space, self.a_space).to(self.device)
+        self.target_net.eval()
+        self.buf = ReplayBuffer(config.capacity)
+        self.lossfn = nn.SmoothL1Loss()
+        self.optimizer = AdamW(self.policy_net.parameters(), lr = config.lr)
+        self.eps = self.config.eps_start
+        self.eps_interval = (self.config.eps_start - self.config.eps_end) /self.config.num_epochs 
+        if self.config.render:
+            self.env.render()
 
-    def select_action(state, e):
-        """
-            state must be preproced
-        """
-        if e != 0:
-            eps_thresh = args.eps_thresh / e
-        else:
-            eps_thresh = args.eps_thresh
-        sample = random.random()
-        if sample > eps_thresh:
-            state = torch.tensor(state).unsqueeze(0).to(device)
-            with torch.no_grad():
-                return policy_net(state).max(1)[1].item()
-        else:
-            return random.randint(0,3)
-        
-    env = gym.make('Breakout-v0')
-    for e in tqdm(range(args.num_epoch)):
-        if args.render: 
-            env.render()
-        state = env.reset()
-        state = preproc(state)
-        next_state = None
-        done = False
-        rewards = []
-        count = 0
-        while not done:
-            action = select_action(state, e)
-            next_obs, reward, done, info = env.step(action)
-            rewards.append(reward)
-            if done:
-                next_state = np.zeros_like(state)
+    def train(self):
+        config, env, buf = self.config, self.env, self.buf
+        lr = config.lr
+
+        def update_target_net():
+            self.target_net.load_state_dict(self.policy_net.state_dict())
+
+        def run_epoch():
+            loss = None
+            curr_state = env.reset()
+            done, next_state, reward_list = False, None, []
+            while not done:
+                action = self.get_eps_act(torch.tensor(curr_state, device = self.device, dtype = torch.float32).unsqueeze(0))
+                next_state, reward, done, _ = env.step(action)
+                reward_list.append(reward)
+                if done:
+                    next_state = None
+                self.buf.push(curr_state, action, reward, next_state, done)
+                curr_state = next_state
+                if len(self.buf) >= self.config.batch_size:
+                    loss = self.optimize_model()
+            return sum(reward_list), loss
+                
+        pbar = tqdm(range(config.num_epochs))
+        for eps in pbar:
+            rewards, loss = run_epoch()
+            if eps % config.target_update == 0:
+                update_target_net()
+            if loss is not None:
+                strprint = f"epoch {eps+1}: loss {loss:.5f}. eps {self.eps} reward {rewards}"
             else:
-                next_state = preproc(next_obs) - state
-            replay_buffer.push(state, action, reward, next_state, done)
-            state = next_state
-            optimize_model()
-        print("Total reward in the episode : {}, epoch : {}".format(sum(rewards), e+1))
-        if (e % args.target_update) == 0:
-            target_net.load_state_dict(policy_net.state_dict())
-    torch.save(policy_net.state_dict(), "model.pt")
+                strprint = f"epoch {eps+1}: eps {self.eps} reward {rewards}"
+            pbar.set_description(strprint)
+            self.eps = self.eps - self.eps_interval
+        self.save_model()
+
+    def optimize_model(self):
+        S, A, R, S_, done = self.buf.torch_samples(self.config.batch_size, device =self.device)
+        temp = torch.zeros_like(R)
+        temp[~done] = self.target_net(S_).max(1)[0].detach()
+        bootstrapped_value = R + self.config.gamma*temp
+        estimate = self.policy_net(S).gather(1, A)
+        loss = self.lossfn(estimate, bootstrapped_value)
+        self.optimizer.zero_grad()
+        loss.backward()
+        nn.utils.clip_grad_value_(self.policy_net.parameters(), self.config.grad_norm_clip)
+        self.optimizer.step()
+        return loss.item()
+
+    def get_eps_act(self, state):
+        """
+            accepts a tensor that is loaded onto the device already
+        """
+        if random.random() > self.eps:
+            action = self.policy_net(state).max(1)[1].item()
+        else:
+            action = random.randrange(self.a_space)
+        return action
+
+    def save_model(self):
+        logger.info("Saving Model to {self.config.save_path}")
+        torch.save(self.policy_net.state_dict(), self.config.save_path)
+
+def run():
+    config = TrainConfig(env="CartPole-v0",render=True)
+    trainer = Trainer(DQNLinear, config)
+    trainer.train()
 
 if __name__ == "__main__":
-    from attrdict import AttrDict
-    args = AttrDict()
-    args_dict = {
-        'batch_size' : 300,
-        'num_epoch' : 300,
-        'target_update' : 10,
-        'gamma': 0.999,
-        'num_memory': 1000,
-        'eps_thresh': 0.85,
-        'render': False
-    }
-    args.update(args_dict)
-    main(args)
+    run()
