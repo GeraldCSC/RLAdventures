@@ -109,7 +109,7 @@ class Trainer:
         torch.save(self.policy_net.state_dict(), self.config.save_path)
 
 def run():
-    config = TrainConfig(env="CartPole-v0",render=True)
+    config = TrainConfig(env="CartPole-v0",render=False)
     trainer = Trainer(DQNLinear, config)
     trainer.train()
 
