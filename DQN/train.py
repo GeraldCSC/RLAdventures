@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class TrainConfig:
     num_epochs = 10000
     batch_size = 10000
-    lr = 0.0001
+    lr = 0.00001
     gamma = 0.999
     capacity = 10000
     eps_start = 0.9
@@ -108,10 +108,10 @@ class Trainer:
         logger.info("Saving Model to {self.config.save_path}")
         torch.save(self.policy_net.state_dict(), self.config.save_path)
 
-def run():
-    config = TrainConfig(env="CartPole-v0",render=False)
+def run(**kwargs):
+    config = TrainConfig(**kwargs)
     trainer = Trainer(DQNLinear, config)
     trainer.train()
 
 if __name__ == "__main__":
-    run()
+    run(num_epochs=1,lr=0.00001, env = "CartPole-v0", render = False)
