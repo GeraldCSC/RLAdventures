@@ -17,9 +17,12 @@ class TrainConfig:
     lr = 0.00001
     gamma = 0.999
     capacity = 10000
-    eps_start = 0.9
-    eps_end = 0.05
+    eps_start = 1
+    eps_end = 0.1
     render = True
+    monitor = True
+    vid_interval = 1000
+    vid_save_path = "videos/"
     save_path = "models/model.pt"
     grad_norm_clip = 1
     target_update = 10
@@ -38,12 +41,20 @@ class Trainer:
         self.target_net = policyclass(self.obs_space, self.a_space).to(self.device)
         self.target_net.eval()
         self.buf = ReplayBuffer(config.capacity)
-        self.lossfn = nn.SmoothL1Loss()
+        self.lossfn = nn.MSELoss()
         self.optimizer = AdamW(self.policy_net.parameters(), lr = config.lr)
         self.eps = self.config.eps_start
         self.eps_interval = (self.config.eps_start - self.config.eps_end) /self.config.num_epochs 
+        self.eps_interval *= 2
         if self.config.render:
             self.env.render()
+        if self.config.monitor:
+            self.env = gym.wrappers.Monitor(self.env, config.vid_save_path, \
+                                            video_callable = lambda ep: ep % config.vid_interval == 0,force= True)
+
+    def zero_grad(self):
+        for param in self.policy_net.parameters():
+            param.grad = None
 
     def train(self):
         config, env, buf = self.config, self.env, self.buf
@@ -60,8 +71,6 @@ class Trainer:
                 action = self.get_eps_act(torch.tensor(curr_state, device = self.device, dtype = torch.float32).unsqueeze(0))
                 next_state, reward, done, _ = env.step(action)
                 reward_list.append(reward)
-                if done:
-                    next_state = None
                 self.buf.push(curr_state, action, reward, next_state, done)
                 curr_state = next_state
                 if len(self.buf) >= self.config.batch_size:
@@ -78,17 +87,17 @@ class Trainer:
             else:
                 strprint = f"epoch {eps+1}: eps {self.eps} reward {rewards}"
             pbar.set_description(strprint)
-            self.eps = self.eps - self.eps_interval
+            if self.eps > 0.1:
+                self.eps = self.eps - self.eps_interval
         self.save_model()
 
     def optimize_model(self):
         S, A, R, S_, done = self.buf.torch_samples(self.config.batch_size, device =self.device)
-        temp = torch.zeros_like(R)
-        temp[~done] = self.target_net(S_).max(1)[0].detach()
-        bootstrapped_value = R + self.config.gamma*temp
+        target = self.config.gamma * self.target_net(S_).max(1)[0].detach().view(-1,1) * (1-done)
+        target = target + R
         estimate = self.policy_net(S).gather(1, A)
-        loss = self.lossfn(estimate, bootstrapped_value)
-        self.optimizer.zero_grad()
+        loss = self.lossfn(estimate, target)
+        self.zero_grad()
         loss.backward()
         nn.utils.clip_grad_value_(self.policy_net.parameters(), self.config.grad_norm_clip)
         self.optimizer.step()
@@ -114,4 +123,4 @@ def run(**kwargs):
     trainer.train()
 
 if __name__ == "__main__":
-    run(num_epochs=1,lr=0.00001, env = "CartPole-v0", render = False)
+    run(num_epochs=8000,lr=0.0001, capacity = 1000,batch_size = 256,env = "CartPole-v0", render = False)

@@ -1,35 +1,29 @@
 import random
 import numpy as np
 import torch
+from collections import deque
 
 class ReplayBuffer():
     def __init__(self, capacity=1000):
-        self.capacity = capacity
-        self.buffer = []
-        self.position = 0
+        self.buffer = deque(maxlen=capacity)
 
     def push(self, S,A,R, S_, done):
-        if len(self.buffer) < self.capacity:
-            self.buffer.append(None) #i.e expand the list so position index works
-        self.buffer[self.position] = (S,A,R,S_, done)
-        self.position = (self.position + 1) % self.capacity #loop back if full
+        self.buffer.append((S,A,R,S_, done))
 
     def sample(self, batch_size): 
         batch = random.sample(self.buffer, batch_size)
-        info_list = list(zip(*batch)) #this is essentially calling zip((SARS),(SARS)) so we get an list that returns all the S all A and so on..
-        info_list[3] = [x for x in info_list[3] if x is not None] #third index is S_
+        info_list = zip(*batch)
         state, action, reward, next_state, done = map(np.stack, info_list) 
         return state, action[...,np.newaxis], reward[...,np.newaxis], next_state, done[...,np.newaxis]
 
     def torch_samples(self, batch_size, device="cpu"):
         S, A, R, S_, done = self.sample(batch_size)
-        S = torch.tensor(S, device = device, dtype = torch.float32)
-        S_ = torch.tensor(S_, device = device, dtype = torch.float32)
-        A = torch.tensor(A, device = device, dtype = torch.long)
-        R = torch.tensor(R, device = device, dtype = torch.float32)
-        done = torch.tensor(done, device=device, dtype= torch.bool)
+        S = torch.as_tensor(S, device = device, dtype = torch.float32)
+        S_ = torch.as_tensor(S_, device = device, dtype = torch.float32)
+        A = torch.as_tensor(A, device = device, dtype = torch.long)
+        R = torch.as_tensor(R, device = device, dtype = torch.float32)
+        done = torch.as_tensor(done, device=device, dtype= torch.long)
         return S,A,R,S_,done
-
 
     def __len__(self):
         return len(self.buffer)
@@ -37,7 +31,7 @@ class ReplayBuffer():
 if __name__ == "__main__":
     x = ReplayBuffer()
     u = np.random.randn(128)
-    x.push(u, 2, 3,None, True)
+    x.push(u, 2, 3,u, True)
     x.push(u, 2, 3,u, False)
     x.push(u, 2, 3,u, False)
     x.push(u, 2, 3,u, True)
