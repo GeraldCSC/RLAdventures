@@ -5,11 +5,9 @@ from memory import ReplayBuffer
 from tqdm import tqdm
 from torch.optim import AdamW
 import torch.nn as nn
-import logging 
 from model import DQNLinear
 import random
 
-logger = logging.getLogger(__name__)
 
 class TrainConfig:
     num_epochs = 10000

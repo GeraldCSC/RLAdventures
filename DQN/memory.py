@@ -27,23 +27,3 @@ class ReplayBuffer():
 
     def __len__(self):
         return len(self.buffer)
-
-if __name__ == "__main__":
-    x = ReplayBuffer()
-    u = np.random.randn(128)
-    x.push(u, 2, 3,u, True)
-    x.push(u, 2, 3,u, False)
-    x.push(u, 2, 3,u, False)
-    x.push(u, 2, 3,u, True)
-    S, A, R, S_, done = x.torch_samples(4)
-    print(S.shape)
-    print(S_.shape)
-    print(A.shape)
-    print(R.shape)
-    print(done)
-    temp = torch.zeros_like(R)
-    print(temp.shape)
-    print(temp[done].shape)
-    print(R)
-    temp[done] = torch.tensor([999, 200]).float().flatten()
-    print(temp)
