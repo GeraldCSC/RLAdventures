@@ -41,12 +41,12 @@ class Trainer:
         self.buf = ReplayBuffer(config.capacity)
         self.lossfn = nn.MSELoss()
         self.optimizer = AdamW(self.policy_net.parameters(), lr = config.lr)
-        self.eps = self.config.eps_start
-        self.eps_interval = (self.config.eps_start - self.config.eps_end) /self.config.num_epochs 
+        self.eps = config.eps_start
+        self.eps_interval = (config.eps_start - config.eps_end) /config.num_epochs 
         self.eps_interval *= 2
-        if self.config.render:
+        if config.render:
             self.env.render()
-        if self.config.monitor:
+        if config.monitor:
             self.env = gym.wrappers.Monitor(self.env, config.vid_save_path, \
                                             video_callable = lambda ep: ep % config.vid_interval == 0,force= True)
 
@@ -85,7 +85,7 @@ class Trainer:
             else:
                 strprint = f"epoch {eps+1}: eps {self.eps} reward {rewards}"
             pbar.set_description(strprint)
-            if self.eps > 0.1:
+            if self.eps > self.config.eps_end:
                 self.eps = self.eps - self.eps_interval
         self.save_model()
 
