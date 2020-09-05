@@ -31,6 +31,8 @@ class Trainer:
         if config.monitor:
             self.env = gym.wrappers.Monitor(self.env, config.vid_save_path, \
                                             video_callable = lambda ep: ep % config.vid_interval == 0,force= True)
+    def preproc_obs(self, x):
+        return torch.as_tensor(x, device = self.device, dtype=torch.float32)
     def update(self, reward, next_state, done):
         raise NotImplementedError
 

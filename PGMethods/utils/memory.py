@@ -1,6 +1,3 @@
-from common import gae
-import torch
-
 accepted_kwargs = {"state", "action", "log_prob", "value", "reward", "done"}
 
 class PGMemory():
