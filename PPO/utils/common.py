@@ -19,7 +19,7 @@ def reward_to_go(rewards, dones, gamma = 1):
         assuming that the rewards are put in chornological order
         rewards: list
         dones: list
-        returns: an np array
+        returns: a np array
     """
     curr_reward = 0
     discounted_rewards = np.zeros_like(rewards, dtype = "float32")
@@ -31,6 +31,7 @@ def reward_to_go(rewards, dones, gamma = 1):
 
 def gae(next_value, values, rewards, dones, gamma = 0.99, lam = 0.95, standardize = False):
     """
+        Computes the generalized advantage estimation
         next_value: scalar for the last value, could be 0 or could be something if we sampled
             parts of a value
         value: list 

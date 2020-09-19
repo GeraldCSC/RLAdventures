@@ -40,6 +40,9 @@ class PPOTrainer(Trainer):
         self.counter = 0 
 
     def act(self, x):
+        """
+            Acts according to the output distribution
+        """
         x = self.preproc_obs(x)
         torch_obs = convert_to_torch([torch.float32], self.device, x)
         dist, value = self.agent.get_dist_value(torch_obs)

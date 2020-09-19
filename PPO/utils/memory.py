@@ -1,3 +1,7 @@
+"""
+    Memory module to keep track of past state transitions
+"""
+
 accepted_kwargs = {"state", "action", "log_prob", "value", "reward", "done"}
 
 class PGMemory():

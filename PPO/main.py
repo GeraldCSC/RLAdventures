@@ -1,3 +1,6 @@
+"""
+    runs the PPOTrainer on an openai gym like env interface
+"""
 def run(trainer):
     env = trainer.env
     ep_num, reward_list = 0, []
